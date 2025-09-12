@@ -1,0 +1,13 @@
+# CMake
+/build/
+/CMakeCache.txt
+/CMakeFiles/
+/cmake-build-*/
+
+# Qt Creator / CLion user files
+*.user
+*.user.*
+
+# OS
+.DS_Store
+Thumbs.db
