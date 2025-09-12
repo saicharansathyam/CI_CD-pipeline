@@ -20,6 +20,7 @@ jobs:
           host: linux
           target: desktop
           arch: gcc_64
+          modules: 'qtdeclarative'   # <-- this is key for Qt6::QuickTest
           cache: true
 
       - name: Configure
