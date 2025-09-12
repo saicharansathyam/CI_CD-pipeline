@@ -1,23 +1,26 @@
 name: Release
 on:
   push:
-    tags:
-      - 'v*'          # tags like v0.1.0, v1.2, etc.
-  workflow_dispatch: {}  # allow manual runs to
+    tags: ['v*']     # e.g., v0.1.3
+  workflow_dispatch: {}
 
 permissions:
-  contents: write        # needed to create a GitHub release
+  contents: write     # needed to create the GitHub Release
+
+env:
+  TAG: ${{ github.ref_name }}
 
 jobs:
   build-release:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout (with tags)
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # ensure tags are available in the workspace
+          fetch-depth: 0
 
-      - name: Install Qt via apt
+      - name: Install Qt & build deps (APT)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -25,7 +28,8 @@ jobs:
             qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtqml qml6-module-qttest \
             qml6-module-qtqml-workerscript \
-            libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev libvulkan-dev
+            libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev libvulkan-dev \
+            patchelf squashfs-tools desktop-file-utils wget file
 
       - name: Configure (Release)
         run: cmake -S CI_CD_Test -B CI_CD_Test/build -DCMAKE_BUILD_TYPE=Release
@@ -33,18 +37,53 @@ jobs:
       - name: Build
         run: cmake --build CI_CD_Test/build --parallel
 
-      - name: Package
+      - name: Package raw binary (versioned tar.gz)
         run: |
+          tar -czf CI_CD_Test/build/HeadUnitApp-${TAG}-linux-x64.tar.gz \
+            -C CI_CD_Test/build/src HeadUnitApp
+
+      - name: Make AppImage
+        run: |
+          set -e
           BIN="CI_CD_Test/build/src/HeadUnitApp"
-          if [ ! -f "$BIN" ]; then
-            echo "Binary not found at $BIN. Dumping build tree for debugging:"
-            ls -alR CI_CD_Test/build
-            exit 1
-          fi
-          tar -czf CI_CD_Test/build/HeadUnitApp-linux-x64.tar.gz -C CI_CD_Test/build/src HeadUnitApp
+          APPDIR="appdir"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp "$BIN" "$APPDIR/usr/bin/HeadUnitApp"
+
+          # Minimal desktop file + dummy icon (replace with a real PNG if you have one)
+          cat > "$APPDIR/usr/share/applications/headunitapp.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=HeadUnitApp
+          Exec=HeadUnitApp
+          Icon=headunitapp
+          Categories=Utility;
+          EOF
+          convert -size 256x256 canvas:black "$APPDIR/usr/share/icons/hicolor/256x256/apps/headunitapp.png" || true
+
+          # Fetch linuxdeploy + Qt plugin
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-*.AppImage
+
+          # Help the Qt plugin find your QML
+          export QML_SOURCES_PATHS="CI_CD_Test/src/qml"
+
+          # Build AppImage
+          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" \
+            -e "$APPDIR/usr/bin/HeadUnitApp" \
+            -d "$APPDIR/usr/share/applications/headunitapp.desktop" \
+            -i "$APPDIR/usr/share/icons/hicolor/256x256/apps/headunitapp.png" \
+            --plugin qt --output appimage
+
+          # Move the produced AppImage to build dir with a versioned name
+          APPIMAGE="$(ls -1 *.AppImage | head -n1)"
+          mv "$APPIMAGE" "CI_CD_Test/build/HeadUnitApp-${TAG}-x86_64.AppImage"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: CI_CD_Test/build/HeadUnitApp-linux-x64.tar.gz
+          files: |
+            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-linux-x64.tar.gz
+            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-x86_64.AppImage
           generate_release_notes: true
