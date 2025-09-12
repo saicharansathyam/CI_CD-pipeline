@@ -47,11 +47,14 @@ jobs:
           set -e
           BIN="CI_CD_Test/build/src/HeadUnitApp"
           APPDIR="appdir"
-          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          ICON="$APPDIR/usr/share/icons/hicolor/256x256/apps/headunitapp.png"
+          DESKTOP="$APPDIR/usr/share/applications/headunitapp.desktop"
+
+          mkdir -p "$APPDIR/usr/bin" "$(dirname "$ICON")" "$(dirname "$DESKTOP")"
           cp "$BIN" "$APPDIR/usr/bin/HeadUnitApp"
 
-          # Minimal desktop file + dummy icon (replace with a real PNG if you have one)
-          cat > "$APPDIR/usr/share/applications/headunitapp.desktop" <<'EOF'
+          # Minimal desktop file
+          cat > "$DESKTOP" <<'EOF'
           [Desktop Entry]
           Type=Application
           Name=HeadUnitApp
@@ -59,31 +62,27 @@ jobs:
           Icon=headunitapp
           Categories=Utility;
           EOF
-          convert -size 256x256 canvas:black "$APPDIR/usr/share/icons/hicolor/256x256/apps/headunitapp.png" || true
+
+          # Always create a placeholder PNG (1x1) so linuxdeploy has an icon
+          base64 -d > "$ICON" <<'PNG'
+          iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wwAAn8B9tXKkKMAAAAASUVORK5CYII=
+          PNG
 
           # Fetch linuxdeploy + Qt plugin
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-*.AppImage
 
-          # Help the Qt plugin find your QML
+          # Help the Qt plugin find QML sources
           export QML_SOURCES_PATHS="CI_CD_Test/src/qml"
 
           # Build AppImage
           ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" \
             -e "$APPDIR/usr/bin/HeadUnitApp" \
-            -d "$APPDIR/usr/share/applications/headunitapp.desktop" \
-            -i "$APPDIR/usr/share/icons/hicolor/256x256/apps/headunitapp.png" \
+            -d "$DESKTOP" \
+            -i "$ICON" \
             --plugin qt --output appimage
 
-          # Move the produced AppImage to build dir with a versioned name
+          # Move artifact with versioned name
           APPIMAGE="$(ls -1 *.AppImage | head -n1)"
           mv "$APPIMAGE" "CI_CD_Test/build/HeadUnitApp-${TAG}-x86_64.AppImage"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-linux-x64.tar.gz
-            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-x86_64.AppImage
-          generate_release_notes: true
