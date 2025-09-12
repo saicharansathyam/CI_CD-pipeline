@@ -3,7 +3,7 @@ on:
   push:
     tags:
       - 'v*'          # tags like v0.1.0, v1.2, etc.
-  workflow_dispatch: {}  # allow manual runs too
+  workflow_dispatch: {}  # allow manual runs to
 
 permissions:
   contents: write        # needed to create a GitHub release
@@ -35,8 +35,13 @@ jobs:
 
       - name: Package
         run: |
-          cd CI_CD_Test/build
-          tar -czf HeadUnitApp-linux-x64.tar.gz HeadUnitApp
+          BIN="CI_CD_Test/build/src/HeadUnitApp"
+          if [ ! -f "$BIN" ]; then
+            echo "Binary not found at $BIN. Dumping build tree for debugging:"
+            ls -alR CI_CD_Test/build
+            exit 1
+          fi
+          tar -czf CI_CD_Test/build/HeadUnitApp-linux-x64.tar.gz -C CI_CD_Test/build/src HeadUnitApp
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
