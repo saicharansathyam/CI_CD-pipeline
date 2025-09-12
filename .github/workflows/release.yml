@@ -1,30 +1,45 @@
-# .github/workflows/release.yml
 name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*'          # tags like v0.1.0, v1.2, etc.
+  workflow_dispatch: {}  # allow manual runs too
+
+permissions:
+  contents: write        # needed to create a GitHub release
 
 jobs:
   build-release:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v4
         with:
-          version: 6.6.3
-          host: linux
-          target: desktop
-          arch: gcc_64
-      - name: Configure (Release)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Package (tar.gz)
+          fetch-depth: 0   # ensure tags are available in the workspace
+
+      - name: Install Qt via apt
         run: |
-          cd build
-          tar -czf app-linux-x64.tar.gz *
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-tools-dev-tools \
+            qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtqml qml6-module-qttest \
+            qml6-module-qtqml-workerscript \
+            libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev libvulkan-dev
+
+      - name: Configure (Release)
+        run: cmake -S CI_CD_Test -B CI_CD_Test/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build CI_CD_Test/build --parallel
+
+      - name: Package
+        run: |
+          cd CI_CD_Test/build
+          tar -czf HeadUnitApp-linux-x64.tar.gz HeadUnitApp
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app-linux-x64.tar.gz
+          files: CI_CD_Test/build/HeadUnitApp-linux-x64.tar.gz
+          generate_release_notes: true
