@@ -1,21 +1,19 @@
 name: CI
-
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
-  workflow_dispatch: {}   # ← lets you click “Run workflow” in Actions tab
+    branches: [ main, master ]
+  workflow_dispatch: {}
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt (6.x)
+      - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
           version: 6.6.3
@@ -24,22 +22,20 @@ jobs:
           arch: gcc_64
           cache: true
 
-      - name: Configure (CMake)
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Configure
+        run: cmake -S CI_CD_Test -B CI_CD_Test/build -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build CI_CD_Test/build --parallel
 
-      - name: Run tests (ctest)
-        run: ctest --test-dir build --output-on-failure
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir CI_CD_Test/build --output-on-failure
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-build
-          path: |
-            build/**
-            !build/CMakeFiles/**
-            !build/**/CMakeFiles/**
+          name: linux-build
+          path: CI_CD_Test/build/**
