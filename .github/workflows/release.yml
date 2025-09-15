@@ -1,11 +1,11 @@
 name: Release
 on:
   push:
-    tags: ['v*']     # e.g., v0.1.3
+    tags: ['v*']          # e.g., v0.1.3
   workflow_dispatch: {}
 
 permissions:
-  contents: write     # needed to create the GitHub Release
+  contents: write         # needed to publish the release
 
 env:
   TAG: ${{ github.ref_name }}
@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Qt & build deps (APT)
+      - name: Install Qt & tooling (APT)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -29,7 +29,7 @@ jobs:
             qml6-module-qtquick-layouts qml6-module-qtqml qml6-module-qttest \
             qml6-module-qtqml-workerscript \
             libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev libvulkan-dev \
-            patchelf squashfs-tools desktop-file-utils wget file
+            patchelf squashfs-tools desktop-file-utils wget file imagemagick
 
       - name: Configure (Release)
         run: cmake -S CI_CD_Test -B CI_CD_Test/build -DCMAKE_BUILD_TYPE=Release
@@ -63,20 +63,24 @@ jobs:
           Categories=Utility;
           EOF
 
-          # Always create a placeholder PNG (1x1) so linuxdeploy has an icon
-          base64 -d > "$ICON" <<'PNG'
-          iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wwAAn8B9tXKkKMAAAAASUVORK5CYII=
-          PNG
+          # Create a valid 256x256 PNG icon with ImageMagick
+          # Try modern 'magick', fallback to 'convert' if needed
+          if command -v magick >/dev/null 2>&1; then
+            magick -size 256x256 canvas:none -fill "#4a90e2" \
+              -draw "roundrectangle 16,16 240,240 48,48" "$ICON"
+          else
+            convert -size 256x256 xc:#4a90e2 "$ICON"
+          fi
 
           # Fetch linuxdeploy + Qt plugin
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-*.AppImage
 
-          # Help the Qt plugin find QML sources
+          # Help the Qt plugin find your QML sources for bundling
           export QML_SOURCES_PATHS="CI_CD_Test/src/qml"
 
-          # Build AppImage
+          # Build AppImage (Qt plugin auto-bundles Qt/QML)
           ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" \
             -e "$APPDIR/usr/bin/HeadUnitApp" \
             -d "$DESKTOP" \
@@ -86,3 +90,11 @@ jobs:
           # Move artifact with versioned name
           APPIMAGE="$(ls -1 *.AppImage | head -n1)"
           mv "$APPIMAGE" "CI_CD_Test/build/HeadUnitApp-${TAG}-x86_64.AppImage"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-linux-x64.tar.gz
+            CI_CD_Test/build/HeadUnitApp-${{ env.TAG }}-x86_64.AppImage
+          generate_release_notes: true
